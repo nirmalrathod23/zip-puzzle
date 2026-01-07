@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Zip - Pro Logic Puzzle</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Dark Theme & Custom Animations */
+        body {
+            background-color: #0f172a; /* Slate 900 */
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .game-board {
+            position: relative;
+            background: #1e293b; /* Slate 800 */
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(255,255,255,0.05);
+            overflow: hidden;
+            touch-action: none;
+            border: 1px solid #334155;
+        }
+
+        .cell {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #64748b; /* Slate 500 */
+            transition: all 0.2s ease;
+            user-select: none;
+            z-index: 2;
+        }
+
+        /* Cell Types */
+        .cell.wall {
+            background-color: #0f172a;
+            border-color: #0f172a;
+            box-shadow: inset 0 0 10px #000;
+            position: relative;
+        }
+        
+        .cell.wall::after {
+            content: '';
+            position: absolute;
+            width: 40%;
+            height: 2px;
+            background: #334155;
+            transform: rotate(45deg);
+        }
+        .cell.wall::before {
+            content: '';
+            position: absolute;
+            width: 40%;
+            height: 2px;
+            background: #334155;
+            transform: rotate(-45deg);
+        }
+
+        .cell.filled {
+            background-color: rgba(56, 189, 248, 0.15); /* Sky blue tint */
+            color: #38bdf8;
+            text-shadow: 0 0 5px rgba(56, 189, 248, 0.5);
+        }
+
+        .cell.active {
+            background-color: #38bdf8; /* Sky 400 */
+            color: #0f172a;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.6);
+            transform: scale(1.05);
+            z-index: 10;
+        }
+
+        .cell.start-point {
+            background-color: #3b82f6;
+            color: white;
+            border-radius: 50%;
+            transform: scale(0.8);
+            box-shadow: 0 0 15px #3b82f6;
+            z-index: 10;
+        }
+
+        /* SVG Lines */
+        #line-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        path.connection-line {
+            fill: none;
+            stroke: #38bdf8;
+            stroke-width: 8px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.8));
+        }
+
+        /* Timer Bar */
+        .timer-container {
+            width: 100%;
+            height: 6px;
+            background: #334155;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .timer-bar {
+            height: 100%;
+            background: #ef4444; /* Red warning color */
+            width: 100%;
+            transition: width 1s linear;
+        }
+        .timer-bar.safe { background: #22c55e; }
+
+        /* Modal */
+        .modal-overlay {
+            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Animations */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake { animation: shake 0.3s ease-in-out; }
+
+        @keyframes pop {
+            0% { transform: scale(0); }
+            80% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .pop-in { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        /* Responsive Grid */
+        .grid-container {
+            display: grid;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="h-screen w-full flex flex-col items-center justify-between py-6 px-4">
+
+    <!-- Header Info -->
+    <header class="w-full max-w-lg flex justify-between items-end pb-4">
+        <div>
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-bold text-sky-400 tracking-widest uppercase">Level</span>
+                <span id="level-display" class="text-2xl font-black text-white">1</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-500 tracking-widest uppercase">Target</span>
+                <span id="target-display" class="text-lg font-mono text-slate-300">25</span>
+            </div>
+        </div>
+        
+        <div class="text-right">
+            <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Time Left</div>
+            <div id="timer-text" class="text-2xl font-mono font-bold text-emerald-400">60s</div>
+        </div>
+    </header>
+
+    <!-- Timer Bar (Visual) -->
+    <div class="w-full max-w-lg h-1 bg-slate-800 rounded-full mb-4 overflow-hidden">
+        <div id="timer-bar" class="timer-bar safe h-full w-full"></div>
+    </div>
+
+    <!-- Main Game Board -->
+    <div class="relative w-full max-w-lg aspect-square game-board" id="game-board">
+        <div id="grid-container" class="grid-container"></div>
+        <svg id="line-svg"></svg>
+    </div>
+
+    <!-- Status Message -->
+    <div id="status-message" class="mt-6 h-6 text-sm font-medium text-sky-300 opacity-0 transition-opacity duration-300 text-center">
+        Start at 1
+    </div>
+
+    <!-- Controls -->
+    <footer class="w-full max-w-lg grid grid-cols-3 gap-4 mt-auto pt-4">
+        <button id="btn-undo" class="bg-slate-800 hover:bg-slate-700 text-slate-300 py-4 rounded-xl font-bold transition active:scale-95 border border-slate-700 flex flex-col items-center gap-1">
+            <i class="fa-solid fa-rotate-left text-lg"></i>
+            <span class="text-xs">Undo</span>
+        </button>
+        
+        <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-300 py-4 rounded-xl font-bold transition active:scale-95 border border-slate-700 flex flex-col items-center gap-1">
+            <i class="fa-solid fa-arrows-rotate text-lg"></i>
+            <span class="text-xs">Reset</span>
+        </button>
+
+        <button id="btn-hint" class="bg-slate-800 hover:bg-slate-700 text-amber-400 py-4 rounded-xl font-bold transition active:scale-95 border border-slate-700 flex flex-col items-center gap-1">
+            <i class="fa-regular fa-lightbulb text-lg"></i>
+            <span class="text-xs text-amber-400/80">Hint</span>
+        </button>
+    </footer>
+
+    <!-- Win/Game Over Modal -->
+    <div id="win-modal" class="fixed inset-0 modal-overlay hidden flex items-center justify-center z-50 opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300 text-center relative overflow-hidden">
+            <!-- Background Glow -->
+            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-sky-500 rounded-full blur-3xl opacity-20 pointer-events-none"></div>
+
+            <div class="relative z-10">
+                <div id="modal-icon" class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-sky-400 text-3xl border border-slate-700 shadow-inner">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
+                
+                <h2 id="modal-title" class="text-2xl font-black text-white mb-1">Level Complete!</h2>
+                <div id="stars-container" class="flex justify-center gap-2 mb-4 text-slate-600 text-xl">
+                    <i class="fa-solid fa-star"></i>
+                    <i class="fa-solid fa-star"></i>
+                    <i class="fa-solid fa-star"></i>
+                </div>
+                
+                <p id="modal-msg" class="text-slate-400 mb-6 text-sm">You are a logic master.</p>
+                
+                <button id="btn-next-level" class="w-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-sky-900/50">
+                    Next Level
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class AdvancedGame {
+            constructor() {
+                // Config
+                this.level = 1;
+                this.baseGridSize = 5; 
+                this.gridSize = 5;
+                
+                // State
+                this.grid = [];
+                this.solutionPath = [];
+                this.userPath = [];
+                this.isDrawing = false;
+                this.isGameOver = false;
+                this.timeLeft = 0;
+                this.timerInterval = null;
+                this.maxTime = 60;
+
+                // DOM
+                this.boardEl = document.getElementById('game-board');
+                this.gridContainerEl = document.getElementById('grid-container');
+                this.svgEl = document.getElementById('line-svg');
+                this.levelDisplay = document.getElementById('level-display');
+                this.targetDisplay = document.getElementById('target-display');
+                this.timerText = document.getElementById('timer-text');
+                this.timerBar = document.getElementById('timer-bar');
+                this.statusMsgEl = document.getElementById('status-message');
+                this.winModal = document.getElementById('win-modal');
+                
+                // Init Events
+                document.getElementById('btn-undo').addEventListener('click', () => this.undo());
+                document.getElementById('btn-reset').addEventListener('click', () => this.resetLevel());
+                document.getElementById('btn-hint').addEventListener('click', () => this.showHint());
+                document.getElementById('btn-next-level').addEventListener('click', () => this.nextLevel());
+                this.bindInputEvents();
+
+                this.initLevel();
+            }
+
+            initLevel() {
+                // Determine difficulty
+                this.gridSize = this.level < 3 ? 5 : (this.level < 6 ? 6 : 7);
+                this.maxTime = (this.gridSize * this.gridSize) * 1.5; // ~1.5 seconds per cell
+                this.timeLeft = this.maxTime;
+                
+                // Update UI
+                this.levelDisplay.textContent = this.level;
+                this.targetDisplay.textContent = this.gridSize * this.gridSize;
+                this.updateTimerUI();
+                this.hideModal();
+                this.isGameOver = false;
+                this.userPath = [];
+                
+                // Generate Logic
+                this.generateComplexGrid();
+                
+                // Render
+                this.renderGrid();
+                this.updateLines();
+                this.startTimer();
+                this.showMessage(`Level ${this.level}: Connect 1 to ${this.grid.length}`, 2500);
+            }
+
+            startTimer() {
+                clearInterval(this.timerInterval);
+                this.timerInterval = setInterval(() => {
+                    if (this.isGameOver) return;
+                    this.timeLeft--;
+                    this.updateTimerUI();
+
+                    if (this.timeLeft <= 0) {
+                        this.gameOver();
+                    }
+                }, 1000);
+            }
+
+            updateTimerUI() {
+                const seconds = Math.ceil(this.timeLeft);
+                this.timerText.textContent = `${seconds}s`;
+                const percentage = (this.timeLeft / this.maxTime) * 100;
+                this.timerBar.style.width = `${percentage}%`;
+
+                // Color changes
+                this.timerBar.className = 'timer-bar h-full transition-all duration-1000';
+                if (percentage < 25) this.timerBar.classList.add('bg-red-500');
+                else if (percentage < 50) this.timerBar.classList.add('bg-amber-500');
+                else this.timerBar.classList.add('safe'); // Green
+            }
+
+            /**
+             * Generates a path AND adds walls in non-path cells.
+             */
+            generateComplexGrid() {
+                const totalCells = this.gridSize * this.gridSize;
+                this.grid = new Array(totalCells).fill(null).map((_, i) => ({
+                    index: i,
+                    value: 0,
+                    row: Math.floor(i / this.gridSize),
+                    col: i % this.gridSize,
+                    isWall: false
+                }));
+
+                // 1. Find a valid Hamiltonian Path
+                this.solutionPath = this.findHamiltonianPath(totalCells);
+                
+                // 2. Assign numbers
+                this.solutionPath.forEach((cellIndex, i) => {
+                    this.grid[cellIndex].value = i + 1;
+                });
+
+                // 3. Add Walls (Obstacles)
+                // We only place walls in cells that are NOT part of the solution path.
+                // This makes the puzzle harder visually but guarantees solvability.
+                const density = 0.15 + (this.level * 0.02); // Increases slightly with level
+                const pathSet = new Set(this.solutionPath);
+                
+                this.grid.forEach(cell => {
+                    if (!pathSet.has(cell.index)) {
+                        if (Math.random() < density) {
+                            cell.isWall = true;
+                        }
+                    }
+                });
+            }
+
+            // Simplified Hamiltonian Finder
+            findHamiltonianPath(totalCells) {
+                // Try randomized DFS
+                let attempts = 0;
+                while(attempts < 200) {
+                    let start = Math.floor(Math.random() * totalCells);
+                    let path = [start];
+                    let visited = new Set([start]);
+                    
+                    const solve = (curr) => {
+                        if (path.length === totalCells) return true;
+                        let neighbors = this.getNeighbors(curr);
+                        neighbors.sort(() => Math.random() - 0.5); // Shuffle
+                        
+                        for (let n of neighbors) {
+                            if (!visited.has(n)) {
+                                visited.add(n);
+                                path.push(n);
+                                if (solve(n)) return true;
+                                visited.delete(n);
+                                path.pop();
+                            }
+                        }
+                        return false;
+                    };
+
+                    if (solve(start)) return path;
+                    attempts++;
+                }
+
+                // Fallback: Snake pattern (guaranteed solution)
+                const path = [];
+                for(let r=0; r<this.gridSize; r++) {
+                    if(r%2===0) {
+                        for(let c=0; c<this.gridSize; c++) path.push(r*this.gridSize + c);
+                    } else {
+                        for(let c=this.gridSize-1; c>=0; c--) path.push(r*this.gridSize + c);
+                    }
+                }
+                return path;
+            }
+
+            getNeighbors(index) {
+                const r = Math.floor(index / this.gridSize);
+                const c = index % this.gridSize;
+                const neighbors = [];
+                if (r > 0) neighbors.push(index - this.gridSize);
+                if (r < this.gridSize - 1) neighbors.push(index + this.gridSize);
+                if (c > 0) neighbors.push(index - 1);
+                if (c < this.gridSize - 1) neighbors.push(index + 1);
+                return neighbors;
+            }
+
+            renderGrid() {
+                this.gridContainerEl.innerHTML = '';
+                this.gridContainerEl.style.gridTemplateColumns = `repeat(${this.gridSize}, 1fr)`;
+                this.gridContainerEl.style.gridTemplateRows = `repeat(${this.gridSize}, 1fr)`;
+
+                this.grid.forEach(cell => {
+                    const el = document.createElement('div');
+                    el.className = 'cell';
+                    if (cell.isWall) {
+                        el.classList.add('wall');
+                    } else {
+                        el.dataset.index = cell.index;
+                        el.textContent = cell.value;
+                        if (cell.value === 1) el.classList.add('start-point');
+                    }
+                    this.gridContainerEl.appendChild(el);
+                });
+            }
+
+            bindInputEvents() {
+                const handleStart = (e) => {
+                    if (this.isGameOver) return;
+                    const target = this.getTargetFromEvent(e);
+                    if (!target || target.classList.contains('wall')) return;
+                    
+                    const index = parseInt(target.dataset.index);
+                    
+                    if (this.userPath.length === 0) {
+                        if (this.grid[index].value === 1) {
+                            this.isDrawing = true;
+                            this.addToPath(index);
+                        } else {
+                            this.showMessage("Start at 1!", 1000);
+                        }
+                    } else if (this.userPath.includes(index)) {
+                        // Allow backtracking
+                        const pos = this.userPath.indexOf(index);
+                        if (pos < this.userPath.length - 1) {
+                            this.userPath = this.userPath.slice(0, pos + 1);
+                            this.updateView();
+                        }
+                    } else {
+                        this.isDrawing = true;
+                    }
+                };
+
+                const handleMove = (e) => {
+                    if (!this.isDrawing || this.isGameOver) return;
+                    if(e.type === 'touchmove') e.preventDefault();
+
+                    const target = this.getTargetFromEvent(e);
+                    if (!target) return;
+                    if (target.classList.contains('wall')) return; // Blocked
+
+                    const index = parseInt(target.dataset.index);
+                    const lastIdx = this.userPath[this.userPath.length - 1];
+                    
+                    if (index === lastIdx) return;
+
+                    // Adjacency Check
+                    const r1 = Math.floor(lastIdx / this.gridSize), c1 = lastIdx % this.gridSize;
+                    const r2 = Math.floor(index / this.gridSize), c2 = index % this.gridSize;
+                    if (Math.abs(r1 - r2) + Math.abs(c1 - c2) !== 1) return;
+
+                    // Backtrack
+                    if (this.userPath.includes(index)) {
+                        if (index === this.userPath[this.userPath.length - 2]) {
+                            this.removeFromPath();
+                        }
+                        return;
+                    }
+
+                    // Forward Move Validation
+                    const headValue = this.grid[lastIdx].value;
+                    const nextValue = this.grid[index].value;
+                    const expectedNext = headValue + 1;
+
+                    // If entering a numbered cell, it MUST be the next sequence number
+                    if (nextValue !== 0 && nextValue !== expectedNext) {
+                        this.showMessage(`Must hit ${expectedNext} next!`, 800);
+                        // Visual shake feedback
+                        this.boardEl.classList.add('shake');
+                        setTimeout(() => this.boardEl.classList.remove('shake'), 300);
+                        return;
+                    }
+
+                    this.addToPath(index);
+                };
+
+                const handleEnd = () => {
+                    this.isDrawing = false;
+                    this.checkWin();
+                };
+
+                this.boardEl.addEventListener('mousedown', handleStart);
+                window.addEventListener('mousemove', handleMove);
+                window.addEventListener('mouseup', handleEnd);
+                
+                this.boardEl.addEventListener('touchstart', handleStart, { passive: false });
+                window.addEventListener('touchmove', handleMove, { passive: false });
+                window.addEventListener('touchend', handleEnd);
+            }
+
+            getTargetFromEvent(e) {
+                const touch = e.touches ? e.touches[0] : e;
+                return document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.cell');
+            }
+
+            addToPath(index) {
+                this.userPath.push(index);
+                this.updateView();
+                if (this.userPath.length === this.grid.filter(c => !c.isWall).length) {
+                    this.checkWin();
+                }
+            }
+
+            removeFromPath() {
+                this.userPath.pop();
+                this.updateView();
+            }
+
+            updateView() {
+                const cells = this.gridContainerEl.querySelectorAll('.cell:not(.wall)');
+                cells.forEach(c => c.classList.remove('active', 'filled', 'hint-highlight'));
+
+                this.userPath.forEach((idx, i) => {
+                    const cell = this.gridContainerEl.children[idx];
+                    if(cell) {
+                        cell.classList.add('filled');
+                        if (i === this.userPath.length - 1) cell.classList.add('active');
+                    }
+                });
+                this.updateLines();
+            }
+
+            updateLines() {
+                if (this.userPath.length < 2) {
+                    this.svgEl.innerHTML = '';
+                    return;
+                }
+                let d = '';
+                this.userPath.forEach((idx, i) => {
+                    const { x, y } = this.getCenter(idx);
+                    d += (i === 0 ? 'M' : 'L') + ` ${x} ${y}`;
+                });
+                this.svgEl.innerHTML = `<path d="${d}" class="connection-line" />`;
+            }
+
+            getCenter(index) {
+                const row = Math.floor(index / this.gridSize);
+                const col = index % this.gridSize;
+                return {
+                    x: (col + 0.5) * (100 / this.gridSize) + '%',
+                    y: (row + 0.5) * (100 / this.gridSize) + '%'
+                };
+            }
+
+            checkWin() {
+                const totalPlayable = this.grid.filter(c => !c.isWall).length;
+                if (this.userPath.length !== totalPlayable) return;
+
+                const lastIdx = this.userPath[this.userPath.length - 1];
+                if (this.grid[lastIdx].value !== totalPlayable) return;
+
+                this.levelComplete();
+            }
+
+            levelComplete() {
+                this.isGameOver = true;
+                clearInterval(this.timerInterval);
+                
+                // Calculate Stars
+                const timeUsed = this.maxTime - this.timeLeft;
+                const optimalTime = this.maxTime * 0.4; // 40% of time for 3 stars
+                let stars = 1;
+                if (timeUsed < optimalTime) stars = 3;
+                else if (timeUsed < this.maxTime * 0.7) stars = 2;
+
+                this.showWinModal(stars);
+            }
+
+            gameOver() {
+                this.isGameOver = true;
+                clearInterval(this.timerInterval);
+                this.showMessage("Time's Up!", 0);
+                this.showWinModal(0, true);
+            }
+
+            showWinModal(stars, isFail = false) {
+                const title = document.getElementById('modal-title');
+                const msg = document.getElementById('modal-msg');
+                const starsContainer = document.getElementById('stars-container');
+                const icon = document.getElementById('modal-icon');
+                const btn = document.getElementById('btn-next-level');
+
+                this.winModal.classList.remove('hidden');
+                setTimeout(() => {
+                    this.winModal.classList.remove('opacity-0');
+                    this.winModal.querySelector('div').classList.remove('scale-95');
+                    this.winModal.querySelector('div').classList.add('scale-100');
+                }, 10);
+
+                if (isFail) {
+                    title.textContent = "Out of Time!";
+                    msg.textContent = "Don't give up, try again.";
+                    icon.innerHTML = '<i class="fa-solid fa-hourglass-end"></i>';
+                    icon.classList.replace('text-sky-400', 'text-red-400');
+                    btn.textContent = "Retry Level";
+                    btn.onclick = () => this.resetLevel();
+                    
+                    starsContainer.innerHTML = '<span class="text-slate-600">No Stars</span>';
+                } else {
+                    title.textContent = "Level Complete!";
+                    msg.textContent = stars === 3 ? "Perfect Speed!" : "Good job!";
+                    icon.innerHTML = '<i class="fa-solid fa-trophy"></i>';
+                    icon.classList.replace('text-red-400', 'text-sky-400');
+                    btn.textContent = "Next Level";
+                    btn.onclick = () => this.nextLevel();
+
+                    // Render Stars
+                    starsContainer.innerHTML = '';
+                    for(let i=0; i<3; i++) {
+                        const s = document.createElement('i');
+                        s.className = `fa-solid fa-star text-2xl ${i < stars ? 'text-yellow-400 pop-in' : 'text-slate-700'}`;
+                        s.style.animationDelay = `${i * 100}ms`;
+                        starsContainer.appendChild(s);
+                    }
+                }
+            }
+
+            nextLevel() {
+                this.level++;
+                this.initLevel();
+            }
+
+            resetLevel() {
+                this.timeLeft = this.maxTime;
+                this.userPath = [];
+                this.updateView();
+                this.isGameOver = false;
+                this.startTimer();
+                this.hideModal();
+            }
+
+            undo() {
+                if (this.userPath.length > 1) this.removeFromPath();
+            }
+
+            showHint() {
+                if (this.isGameOver) return;
+                
+                // Clear hints
+                document.querySelectorAll('.hint-highlight').forEach(e => e.classList.remove('hint-highlight'));
+                
+                // Next Value Logic
+                const currentVal = this.userPath.length > 0 ? this.grid[this.userPath[this.userPath.length-1]].value : 0;
+                const nextVal = currentVal + 1;
+                
+                // In the solution path, index = nextVal - 1
+                const targetIndex = this.solutionPath[nextVal - 1];
+                const cell = this.gridContainerEl.children[targetIndex];
+                
+                if (cell && !cell.classList.contains('wall')) {
+                    cell.classList.add('hint-highlight');
+                    this.showMessage(`Find number ${nextVal}`, 1000);
+                }
+            }
+
+            showMessage(text, duration) {
+                this.statusMsgEl.textContent = text;
+                this.statusMsgEl.style.opacity = '1';
+                clearTimeout(this.msgTimeout);
+                if (duration > 0) {
+                    this.msgTimeout = setTimeout(() => {
+                        this.statusMsgEl.style.opacity = '0';
+                    }, duration);
+                }
+            }
+
+            hideModal() {
+                this.winModal.classList.add('opacity-0');
+                this.winModal.querySelector('div').classList.remove('scale-100');
+                this.winModal.querySelector('div').classList.add('scale-95');
+                setTimeout(() => {
+                    this.winModal.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            new AdvancedGame();
+        });
+    </script>
+</body>
+</html>
